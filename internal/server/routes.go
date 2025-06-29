@@ -86,8 +86,7 @@ func (s *FiberServer) registrationHandler(c *fiber.Ctx) error {
 	}
 
 	tgMode := tgbotapi.ModeHTML
-	//_, err = s.tgBot.SendMessageToChannel("@aktel_cs2", printTeam(submission, &tgMode), &tgMode)
-	_, err = s.tgBot.SendMessageToChannel("@unsearchable_channel", printTeam(submission, &tgMode), &tgMode)
+	_, err = s.tgBot.SendMessageToChannel("@aktel_cs2", printTeam(submission, &tgMode), &tgMode)
 	if err != nil {
 		s.log.Err(err).Msg("sending message via telegram failed")
 	}
