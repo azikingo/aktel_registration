@@ -40,8 +40,8 @@ func gracefulShutdown(fiberServer *server.FiberServer, done chan bool) {
 }
 
 func main() {
-
-	server := server.New()
+	server, cleanup := server.New()
+	defer cleanup()
 
 	server.RegisterFiberRoutes()
 

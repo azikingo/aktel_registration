@@ -2,114 +2,216 @@ package database
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"log"
 	"os"
-	"strconv"
+	"runtime"
 	"time"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "github.com/joho/godotenv/autoload"
 )
 
-// Service represents a service that interacts with a database.
-type Service interface {
-	// Health returns a map of health status information.
-	// The keys and values in the map are service-specific.
-	Health() map[string]string
-
-	// Close terminates the database connection.
-	// It returns an error if the connection cannot be closed.
-	Close() error
-}
-
-type service struct {
-	db *sql.DB
-}
-
 var (
-	database   = os.Getenv("BLUEPRINT_DB_DATABASE")
-	password   = os.Getenv("BLUEPRINT_DB_PASSWORD")
-	username   = os.Getenv("BLUEPRINT_DB_USERNAME")
-	port       = os.Getenv("BLUEPRINT_DB_PORT")
-	host       = os.Getenv("BLUEPRINT_DB_HOST")
-	schema     = os.Getenv("BLUEPRINT_DB_SCHEMA")
-	dbInstance *service
+	database = os.Getenv("BLUEPRINT_DB_DATABASE")
+	password = os.Getenv("BLUEPRINT_DB_PASSWORD")
+	username = os.Getenv("BLUEPRINT_DB_USERNAME")
+	port     = os.Getenv("BLUEPRINT_DB_PORT")
+	host     = os.Getenv("BLUEPRINT_DB_HOST")
+	schema   = os.Getenv("BLUEPRINT_DB_SCHEMA")
 )
 
-func New() Service {
-	// Reuse Connection
-	if dbInstance != nil {
-		return dbInstance
-	}
+type Database struct {
+	Pool *pgxpool.Pool
+}
+
+func NewDatabase() (*Database, func(), error) {
 	connStr := fmt.Sprintf("postgres://%s:%s@%s:%s/%s?sslmode=disable&search_path=%s", username, password, host, port, database, schema)
-	db, err := sql.Open("pgx", connStr)
+	config, err := pgxpool.ParseConfig(connStr)
 	if err != nil {
-		log.Fatal(err)
+		return nil, nil, err
 	}
-	dbInstance = &service{
-		db: db,
+
+	// Performance optimizations
+	config.MaxConns = int32(runtime.NumCPU() * 4) // 4x CPU cores
+	config.MinConns = int32(runtime.NumCPU())     // Min connections
+	config.MaxConnLifetime = time.Hour            // Connection lifetime
+	config.MaxConnIdleTime = time.Minute * 30     // Idle timeout
+	config.HealthCheckPeriod = time.Minute        // Health check interval
+
+	// Connection-level optimizations
+	config.ConnConfig.RuntimeParams = map[string]string{
+		"application_name":                    "aktel",
+		"search_path":                         "public",
+		"timezone":                            "UTC",
+		"statement_timeout":                   "30s",
+		"lock_timeout":                        "10s",
+		"idle_in_transaction_session_timeout": "60s",
 	}
-	return dbInstance
+
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	cleanup := func() {
+		log.Printf("Disconnected from database: %s", database)
+		pool.Close()
+	}
+
+	return &Database{Pool: pool}, cleanup, nil
 }
 
-// Health checks the health of the database connection by pinging the database.
-// It returns a map with keys indicating various health statistics.
-func (s *service) Health() map[string]string {
-	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
-	defer cancel()
-
-	stats := make(map[string]string)
-
-	// Ping the database
-	err := s.db.PingContext(ctx)
-	if err != nil {
-		stats["status"] = "down"
-		stats["error"] = fmt.Sprintf("db down: %v", err)
-		log.Fatalf("db down: %v", err) // Log the error and terminate the program
-		return stats
-	}
-
-	// Database is up, add more statistics
-	stats["status"] = "up"
-	stats["message"] = "It's healthy"
-
-	// Get database stats (like open connections, in use, idle, etc.)
-	dbStats := s.db.Stats()
-	stats["open_connections"] = strconv.Itoa(dbStats.OpenConnections)
-	stats["in_use"] = strconv.Itoa(dbStats.InUse)
-	stats["idle"] = strconv.Itoa(dbStats.Idle)
-	stats["wait_count"] = strconv.FormatInt(dbStats.WaitCount, 10)
-	stats["wait_duration"] = dbStats.WaitDuration.String()
-	stats["max_idle_closed"] = strconv.FormatInt(dbStats.MaxIdleClosed, 10)
-	stats["max_lifetime_closed"] = strconv.FormatInt(dbStats.MaxLifetimeClosed, 10)
-
-	// Evaluate stats to provide a health message
-	if dbStats.OpenConnections > 40 { // Assuming 50 is the max for this example
-		stats["message"] = "The database is experiencing heavy load."
-	}
-
-	if dbStats.WaitCount > 1000 {
-		stats["message"] = "The database has a high number of wait events, indicating potential bottlenecks."
-	}
-
-	if dbStats.MaxIdleClosed > int64(dbStats.OpenConnections)/2 {
-		stats["message"] = "Many idle connections are being closed, consider revising the connection pool settings."
-	}
-
-	if dbStats.MaxLifetimeClosed > int64(dbStats.OpenConnections)/2 {
-		stats["message"] = "Many connections are being closed due to max lifetime, consider increasing max lifetime or revising the connection usage pattern."
-	}
-
-	return stats
+type Team struct {
+	Id          int64
+	Name        string
+	FastCupLink string
+	LogoLink    string
 }
 
-// Close closes the database connection.
-// It logs a message indicating the disconnection from the specific database.
-// If the connection is successfully closed, it returns nil.
-// If an error occurs while closing the connection, it returns the error.
-func (s *service) Close() error {
-	log.Printf("Disconnected from database: %s", database)
-	return s.db.Close()
+type Submission struct {
+	Id                int64
+	ExternalId        string
+	TournamentId      int64
+	TeamId            int64
+	SubmittedAt       time.Time
+	SubmissionIp      string
+	SubmissionUrl     string
+	SubmissionEditUrl string
+	LastUpdatedAt     time.Time
+}
+
+type Role string
+
+const (
+	Captain = "CAPTAIN"
+	Player  = "PLAYER"
+	Reserve = "RESERVE"
+)
+
+type Member struct {
+	Id          int64
+	TeamId      int64
+	Name        string
+	Surname     string
+	GradYear    int32
+	Role        Role
+	PhoneNumber string
+}
+
+func (d *Database) ApplySubmission(ctx context.Context, team Team, submission Submission, members []Member) error {
+	var teamId int64
+
+	tx, err := d.Pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback(ctx)
+		} else {
+			err = tx.Commit(ctx)
+		}
+	}()
+
+	err = tx.QueryRow(
+		ctx,
+		`insert into team (name, fastcup_link, logo_link)
+			values ($1, $2, $3)
+			returning id`,
+		team.Name,
+		team.FastCupLink,
+		team.LogoLink,
+	).Scan(&teamId)
+	if err != nil {
+		return err
+	}
+
+	_, err = tx.Exec(ctx,
+		`insert into submission (external_id, team_id, tournament_id, submitted_at, submission_ip, submission_url, 
+                        submission_edit_url, last_updated_at)
+			values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+		submission.ExternalId,
+		teamId,
+		submission.TournamentId,
+		submission.SubmittedAt,
+		submission.SubmissionIp,
+		submission.SubmissionUrl,
+		submission.SubmissionEditUrl,
+		submission.LastUpdatedAt,
+	)
+	if err != nil {
+		return err
+	}
+
+	batch := &pgx.Batch{}
+
+	for _, member := range members {
+		batch.Queue(
+			`INSERT INTO member (team_id, name, surname, grad_year, role, phone_number) 
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+			teamId,
+			member.Name,
+			member.Surname,
+			member.GradYear,
+			member.Role,
+			member.PhoneNumber,
+		)
+	}
+
+	results := tx.SendBatch(ctx, batch)
+	defer results.Close()
+
+	// Process results to catch any errors
+	for i := 0; i < len(members); i++ {
+		_, err = results.Exec()
+		if err != nil {
+			return fmt.Errorf("failed to insert member %d: %w", i, err)
+		}
+	}
+
+	return err
+}
+
+func (d *Database) ListRegisteredTeams(ctx context.Context) ([]Team, error) {
+	var tournamentId int64
+
+	err := d.Pool.QueryRow(ctx,
+		`select id from tournament where is_active order by start_date limit 1`).Scan(&tournamentId)
+	if err != nil {
+		return nil, err
+	}
+
+	return nil, nil
+}
+
+func (d *Database) SaveUserFromTelegram(ctx context.Context, user *tgbotapi.User) error {
+	_, err := d.Pool.Exec(ctx,
+		`INSERT INTO users (
+            tg_id, username, first_name, last_name, language_code, is_bot,
+            can_join_groups, can_read_all_group_messages,
+            supports_inline_queries, phone
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6,
+            $7, $8,
+            $9, $10
+        )
+        ON CONFLICT (id) DO NOTHING`,
+		user.ID,
+		user.UserName,
+		user.FirstName,
+		user.LastName,
+		user.LanguageCode,
+		user.IsBot,
+		user.CanJoinGroups,
+		user.CanReadAllGroupMessages,
+		user.SupportsInlineQueries,
+		nil, // phone is nil by default unless you collect it via contact request
+	)
+	return err
 }
