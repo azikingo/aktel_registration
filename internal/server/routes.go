@@ -220,23 +220,25 @@ func normalizePhone(input string) (reply string, err error) {
 
 func printTeam(submission SubmissionResponse, mode *string) string {
 	teamName := submission.TeamName
+	captainPhone := ""
 	if mode != nil {
 		switch *mode {
 		case tgbotapi.ModeHTML:
 			teamName = "<b>" + teamName + "</b>"
 		case "WHATSAPP":
 			teamName = "*" + teamName + "*"
+			captainPhone = submission.PhoneNumber
 		case tgbotapi.ModeMarkdown, tgbotapi.ModeMarkdownV2:
 			teamName = "**" + teamName + "**"
 		}
 	}
 	msg := fmt.Sprintf(
-		"Team \"%s\" registered!\n\nSquad:\n1. %s %s (%d)\n2. %s %s (%d)\n3. %s %s (%d)\n4. %s %s (%d)\n5. %s %s (%d)",
-		teamName, submission.CaptainLastName, submission.CaptainFirstName, submission.CaptainGradYear,
-		submission.Member2LastName, submission.Member2FirstName, submission.Member2GradYear,
-		submission.Member3LastName, submission.Member3FirstName, submission.Member3GradYear,
-		submission.Member4LastName, submission.Member4FirstName, submission.Member4GradYear,
-		submission.Member5LastName, submission.Member5FirstName, submission.Member5GradYear,
+		"Team \"%s\" registered!\n\nSquad:\n1. %s %s (%d) %s\n2. %s %s (%d)\n3. %s %s (%d)\n4. %s %s (%d)\n5. %s %s (%d)",
+		teamName, strings.Trim(submission.CaptainLastName, " "), strings.Trim(submission.CaptainFirstName, " "), submission.CaptainGradYear, captainPhone,
+		strings.Trim(submission.Member2LastName, " "), strings.Trim(submission.Member2FirstName, " "), submission.Member2GradYear,
+		strings.Trim(submission.Member3LastName, " "), strings.Trim(submission.Member3FirstName, " "), submission.Member3GradYear,
+		strings.Trim(submission.Member4LastName, " "), strings.Trim(submission.Member4FirstName, " "), submission.Member4GradYear,
+		strings.Trim(submission.Member5LastName, " "), strings.Trim(submission.Member5FirstName, " "), submission.Member5GradYear,
 	)
 
 	if submission.ReserveLastName != nil && submission.ReserveFirstName != nil && submission.ReserveGradYear != nil {
