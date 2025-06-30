@@ -201,7 +201,7 @@ func (d *Database) SaveUserFromTelegram(ctx context.Context, user *tgbotapi.User
             $7, $8,
             $9, $10
         )
-        ON CONFLICT (id) DO NOTHING`,
+        ON CONFLICT (tg_id) DO NOTHING`,
 		user.ID,
 		user.UserName,
 		user.FirstName,

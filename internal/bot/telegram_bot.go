@@ -46,27 +46,37 @@ func (b *TGBot) Start(ctx context.Context) {
 	updates := b.Bot.GetUpdatesChan(u)
 
 	for update := range updates {
-		if update.Message == nil {
-			continue
-		}
+		b.HandleUpdate(update)
+	}
+}
 
-		user := update.Message.From
-		chatId := update.Message.Chat.ID
+func (b *TGBot) Stop(ctx context.Context) {
+	b.Bot.StopReceivingUpdates()
+}
 
-		// Save general user info
-		if err := b.db.SaveUserFromTelegram(ctx, user); err != nil {
-			b.log.Err(err).Msg("save user from telegram failed")
-		}
+func (b *TGBot) HandleUpdate(update tgbotapi.Update) {
+	if update.Message == nil {
+		return
+	}
 
-		// Command handling
-		if update.Message.IsCommand() {
-			msg := tgbotapi.NewMessage(chatId, "❓ Unknown command.")
+	user := update.Message.From
+	chatId := update.Message.Chat.ID
 
-			switch update.Message.Command() {
-			case "start":
-				msg = tgbotapi.NewMessage(chatId, "👋 Welcome to AKTEL Tournament bot!\nPress /help to use.")
+	// Save general user info
+	if err := b.db.SaveUserFromTelegram(context.Background(), user); err != nil {
+		b.log.Err(err).Msg("save user from telegram failed")
+	}
 
-			case "teams":
+	// Command handling
+	if update.Message.IsCommand() {
+		msg := tgbotapi.NewMessage(chatId, "❓ Unknown command.")
+
+		switch update.Message.Command() {
+		case "start":
+			msg = tgbotapi.NewMessage(chatId, "👋 Welcome to AKTEL Tournament bot!\nPress /help to use.")
+
+		case "teams":
+			msg = tgbotapi.NewMessage(chatId, "Method not implemented yet, try again later.")
 			//args := update.Message.CommandArguments()
 			//if args != "" {
 			//	angel, err := GetAngelByPhone(phone)
@@ -89,32 +99,30 @@ func (b *TGBot) Start(ctx context.Context) {
 			//	}
 			//}
 
-			case "help":
-				msg = tgbotapi.NewMessage(chatId, "I did a list to you here for commands that I can do:\n"+
-					"/start - Start the bot\n"+
-					"/teams - List registered teams\n"+
-					"/help - Show this message\n")
+		case "help":
+			msg = tgbotapi.NewMessage(chatId, "I did a list to you here for commands that I can do:\n"+
+				"/start - Start the bot\n"+
+				"/teams - List registered teams\n"+
+				"/help - Show this message\n")
 
-			}
-
-			_, err := b.Bot.Send(msg)
-			if err != nil {
-				b.log.Err(err).Msg("telegram message reply for command failed")
-			}
-			continue
 		}
 
-		// Handle regular messages (non-commands)
-		msg := tgbotapi.NewMessage(chatId, "I only respond to commands like /start or /phone.")
 		_, err := b.Bot.Send(msg)
 		if err != nil {
-			b.log.Err(err).Msg("telegram message sending failed")
+			b.log.Err(err).Msg("telegram message reply for command failed")
 		}
-	}
-}
 
-func (b *TGBot) Stop(ctx context.Context) {
-	b.Bot.StopReceivingUpdates()
+		return
+	}
+
+	// Handle regular messages (non-commands)
+	msg := tgbotapi.NewMessage(chatId, "Press /help to use.")
+	_, err := b.Bot.Send(msg)
+	if err != nil {
+		b.log.Err(err).Msg("telegram message sending failed")
+	}
+
+	return
 }
 
 func (b *TGBot) SendMessageToChannel(username, message string, mode *string) (*tgbotapi.Message, error) {

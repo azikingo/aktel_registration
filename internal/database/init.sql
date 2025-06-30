@@ -1,7 +1,7 @@
 create table if not exists users
 (
     id                          bigint generated always as identity,
-    tg_id                       bigint,
+    tg_id                       bigint unique,
     username                    text,
     first_name                  text,
     last_name                   text,

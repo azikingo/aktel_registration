@@ -5,6 +5,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"os"
 	"regexp"
 	"strings"
 	"time"
@@ -25,8 +27,19 @@ func (s *FiberServer) RegisterFiberRoutes() {
 	}))
 
 	s.App.Get("/", s.HelloWorldHandler)
+	s.App.Post("/telegram-webhook", s.telegramUpdateHandler)
 	s.App.Post("/aktel-registration", s.registrationHandler)
 
+	webhookURL := os.Getenv("TELEGRAM_WEBHOOK")
+	webhookConf, err := tgbotapi.NewWebhook(webhookURL)
+	if err != nil {
+		s.log.Err(err).Msg("telegram webhook initialize failed")
+	}
+
+	_, err = s.tgBot.Bot.Request(webhookConf)
+	if err != nil {
+		s.log.Err(err).Msg("telegram bot webhook request failed")
+	}
 }
 
 func (s *FiberServer) HelloWorldHandler(c *fiber.Ctx) error {
@@ -66,6 +79,19 @@ type SubmissionResponse struct {
 	SubmissionEditURL string  `json:"Submission Edit URL"`
 	LastUpdateDate    *string `json:"Last Update Date"` // Empty string, keep as string
 	SubmissionID      string  `json:"Submission ID"`
+}
+
+func (s *FiberServer) telegramUpdateHandler(c *fiber.Ctx) error {
+	var update tgbotapi.Update
+
+	err := c.BodyParser(&update)
+	if err != nil {
+		s.log.Err(err).Msg("telegram update parse failed")
+		return err
+	}
+
+	go s.tgBot.HandleUpdate(update)
+	return c.SendStatus(http.StatusOK)
 }
 
 func (s *FiberServer) registrationHandler(c *fiber.Ctx) error {
