@@ -12,7 +12,6 @@ import (
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/rs/zerolog/log"
 )
 
 func (s *FiberServer) RegisterFiberRoutes() {
@@ -77,8 +76,6 @@ func (s *FiberServer) registrationHandler(c *fiber.Ctx) error {
 		return err
 	}
 
-	//go s.registerTeam(submission)
-
 	wpMode := "WHATSAPP"
 	err = s.wpBot.SendMessage("787471301200", printTeam(submission, &wpMode))
 	if err != nil {
@@ -90,6 +87,8 @@ func (s *FiberServer) registrationHandler(c *fiber.Ctx) error {
 	if err != nil {
 		s.log.Err(err).Msg("sending message via telegram failed")
 	}
+
+	go s.registerTeam(submission)
 
 	resp := fiber.Map{
 		"success": "true",
@@ -137,33 +136,33 @@ func (s *FiberServer) registerTeam(submission SubmissionResponse) {
 	membersDto := []database.Member{
 		{
 			Role:        database.Captain,
-			Name:        submission.CaptainFirstName,
-			Surname:     submission.CaptainLastName,
+			Name:        strings.Trim(submission.CaptainFirstName, " "),
+			Surname:     strings.Trim(submission.CaptainLastName, " "),
 			GradYear:    submission.CaptainGradYear,
 			PhoneNumber: phoneNumber,
 		},
 		{
 			Role:     database.Player,
-			Name:     submission.Member2FirstName,
-			Surname:  submission.Member2LastName,
+			Name:     strings.Trim(submission.Member2FirstName, " "),
+			Surname:  strings.Trim(submission.Member2LastName, " "),
 			GradYear: submission.Member2GradYear,
 		},
 		{
 			Role:     database.Player,
-			Name:     submission.Member3FirstName,
-			Surname:  submission.Member3LastName,
+			Name:     strings.Trim(submission.Member3FirstName, " "),
+			Surname:  strings.Trim(submission.Member3LastName, " "),
 			GradYear: submission.Member3GradYear,
 		},
 		{
 			Role:     database.Player,
-			Name:     submission.Member4FirstName,
-			Surname:  submission.Member4LastName,
+			Name:     strings.Trim(submission.Member4FirstName, " "),
+			Surname:  strings.Trim(submission.Member4LastName, " "),
 			GradYear: submission.Member4GradYear,
 		},
 		{
 			Role:     database.Player,
-			Name:     submission.Member5FirstName,
-			Surname:  submission.Member5LastName,
+			Name:     strings.Trim(submission.Member5FirstName, " "),
+			Surname:  strings.Trim(submission.Member5LastName, " "),
 			GradYear: submission.Member5GradYear,
 		},
 	}
@@ -185,15 +184,7 @@ func (s *FiberServer) registerTeam(submission SubmissionResponse) {
 	return
 }
 
-// normalizePhone normalizes Kazakhstan phone numbers to the +7XXXXXXXXXX format
-func normalizePhone(input string) (reply string, err error) {
-	defer func() {
-		if err != nil {
-			log.Err(err).Msg("number normalize failed")
-			reply = input
-			err = nil
-		}
-	}()
+func normalizePhone(input string) (string, error) {
 
 	// Remove all non-digit characters
 	re := regexp.MustCompile(`\D`)
@@ -221,13 +212,20 @@ func normalizePhone(input string) (reply string, err error) {
 func printTeam(submission SubmissionResponse, mode *string) string {
 	teamName := submission.TeamName
 	captainPhone := ""
+	var err error
+
 	if mode != nil {
 		switch *mode {
 		case tgbotapi.ModeHTML:
 			teamName = "<b>" + teamName + "</b>"
+
 		case "WHATSAPP":
 			teamName = "*" + teamName + "*"
-			captainPhone = submission.PhoneNumber
+			captainPhone, err = normalizePhone(submission.PhoneNumber)
+			if err != nil {
+				captainPhone = submission.PhoneNumber
+			}
+
 		case tgbotapi.ModeMarkdown, tgbotapi.ModeMarkdownV2:
 			teamName = "**" + teamName + "**"
 		}
